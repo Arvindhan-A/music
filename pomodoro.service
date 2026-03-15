@@ -1,0 +1,19 @@
+[Unit]
+Description=Pomodoro × Spotify — music.gaiasentinel.online
+After=network.target
+
+[Service]
+User=gaia
+WorkingDirectory=/home/gaia/pomodoro
+EnvironmentFile=/home/gaia/pomodoro/.env
+ExecStart=/home/gaia/pomodoro/venv/bin/gunicorn app:app \
+    --bind 127.0.0.1:5050 \
+    --workers 2 \
+    --timeout 60 \
+    --access-logfile /home/gaia/pomodoro/access.log \
+    --error-logfile /home/gaia/pomodoro/error.log
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

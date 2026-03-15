@@ -1,0 +1,571 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Pomodoro × Spotify — GaiaSentinel</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
+html,body,#root{height:100%;overflow:hidden;}
+body{font-family:'Space Grotesk',system-ui,sans-serif;background:#0A0A16;color:#E8E8FF;}
+input,button,select,textarea{font-family:inherit;}
+::-webkit-scrollbar{width:4px;}::-webkit-scrollbar-track{background:transparent;}::-webkit-scrollbar-thumb{background:#2A2A4A;border-radius:4px;}
+input[type=range]{-webkit-appearance:none;appearance:none;background:transparent;cursor:pointer;width:100%;}
+input[type=range]::-webkit-slider-track{height:3px;background:#2A2A4A;border-radius:4px;}
+input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:13px;height:13px;border-radius:50%;background:currentColor;margin-top:-5px;transition:transform .1s;}
+input[type=range]:hover::-webkit-slider-thumb{transform:scale(1.2);}
+@keyframes fadeUp{from{opacity:0;transform:translateY(10px);}to{opacity:1;transform:translateY(0);}}
+@keyframes popIn{from{opacity:0;transform:scale(.94);}to{opacity:1;transform:scale(1);}}
+.fu{animation:fadeUp .22s ease both;}.pop{animation:popIn .18s ease both;}
+button:focus-visible{outline:2px solid rgba(255,255,255,.3);outline-offset:2px;}
+</style>
+</head>
+<body>
+<div id="root"></div>
+
+<!-- Spotify Web Playback SDK (loaded async) -->
+<script>window.onSpotifyWebPlaybackSDKReady=()=>{window.__sdkReady=true;window.__sdkRes&&window.__sdkRes();};</script>
+
+<script type="text/babel">
+const{useState,useEffect,useRef,useCallback}=React;
+
+/* ── Design tokens ── */
+const T={
+  bg:'#0A0A16',surf:'#12121E',card:'#1A1A2E',border:'rgba(255,255,255,.08)',
+  text:'#E8E8FF',mid:'#A0A0C0',muted:'#606080',
+  focus:'#34D399',short:'#818CF8',long:'#C084FC',spotify:'#1DB954',
+};
+const MODE={
+  focus:{key:'focus',label:'Focus',      color:T.focus, dim:'rgba(52,211,153,.12)',secs:25*60},
+  short:{key:'short',label:'Short Break',color:T.short, dim:'rgba(129,140,248,.12)',secs:5*60},
+  long: {key:'long', label:'Long Break', color:T.long,  dim:'rgba(192,132,252,.12)',secs:15*60},
+};
+
+/* ── Spotify helpers (token from server) ── */
+let _cachedToken=null,_tokenExpiry=0;
+
+const getToken=async()=>{
+  if(_cachedToken&&Date.now()<_tokenExpiry-5000)return _cachedToken;
+  const r=await fetch('/api/token');
+  if(!r.ok){_cachedToken=null;return null;}
+  const d=await r.json();
+  _cachedToken=d.access_token;
+  _tokenExpiry=Date.now()+50*60*1000; // 50 min safe window
+  return _cachedToken;
+};
+
+const sapi=async(path,method='GET',body=null)=>{
+  const tok=await getToken();
+  if(!tok)return null;
+  const r=await fetch('https://api.spotify.com/v1'+path,{
+    method,
+    headers:{Authorization:'Bearer '+tok,'Content-Type':'application/json'},
+    body:body?JSON.stringify(body):null,
+  });
+  if(r.status===204||r.status===202||(!r.ok&&method!=='GET'))return null;
+  if(!r.ok)return null;
+  try{return await r.json();}catch{return null;}
+};
+
+/* ── Ambient sounds (pure Web Audio) ── */
+const makeAmbient=(type,vol)=>{
+  const ctx=new AudioContext(),gain=ctx.createGain();
+  gain.gain.value=vol/100*.25;gain.connect(ctx.destination);
+  const srcs=[];
+  if(type==='rain'){
+    const sz=ctx.sampleRate*4,buf=ctx.createBuffer(2,sz,ctx.sampleRate);
+    for(let c=0;c<2;c++){const d=buf.getChannelData(c);let l=0;for(let i=0;i<sz;i++)d[i]=l=(l+.02*(Math.random()*2-1))/1.02*3.5;}
+    const s=ctx.createBufferSource();s.buffer=buf;s.loop=true;
+    const f=ctx.createBiquadFilter();f.type='lowpass';f.frequency.value=600;
+    s.connect(f);f.connect(gain);s.start();srcs.push(s);
+  } else if(type==='white'){
+    const sz=ctx.sampleRate*2,buf=ctx.createBuffer(1,sz,ctx.sampleRate);
+    const d=buf.getChannelData(0);for(let i=0;i<sz;i++)d[i]=Math.random()*2-1;
+    const s=ctx.createBufferSource();s.buffer=buf;s.loop=true;s.connect(gain);s.start();srcs.push(s);
+  } else if(type==='focus'){
+    [[200,-1],[210,1]].forEach(([f,pan])=>{
+      const o=ctx.createOscillator(),p=ctx.createStereoPanner(),g=ctx.createGain();
+      o.frequency.value=f;p.pan.value=pan;g.gain.value=.2;
+      o.connect(g);g.connect(p);p.connect(gain);o.start();srcs.push(o);
+    });
+  }
+  return{ctx,gain,srcs,setVol:v=>gain.gain.setTargetAtTime(v/100*.25,ctx.currentTime,.05),stop:()=>{srcs.forEach(s=>{try{s.stop();}catch{}});ctx.close();}};
+};
+
+const fmt=s=>`${String(Math.floor(s/60)).padStart(2,'0')}:${String(s%60).padStart(2,'0')}`;
+
+/* ── Ring SVG ── */
+function Ring({progress,color,size=280,children}){
+  const r=size/2-16,circ=2*Math.PI*r;
+  return(
+    <div style={{position:'relative',width:size,height:size,flexShrink:0}}>
+      <svg width={size} height={size} style={{position:'absolute',inset:0,transform:'rotate(-90deg)'}}>
+        <defs><filter id="glo"><feGaussianBlur stdDeviation="6" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter></defs>
+        <circle cx={size/2} cy={size/2} r={r} stroke={color+'22'} strokeWidth={10} fill="none"/>
+        <circle cx={size/2} cy={size/2} r={r} stroke={color} strokeWidth={10} fill="none"
+          strokeDasharray={circ} strokeDashoffset={circ*(1-Math.max(0,Math.min(1,progress)))}
+          strokeLinecap="round" filter="url(#glo)"
+          style={{transition:'stroke-dashoffset .5s linear,stroke .4s ease'}}/>
+      </svg>
+      <div style={{position:'absolute',inset:0,display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center'}}>{children}</div>
+    </div>
+  );
+}
+
+/* ── Seek bar ── */
+function SeekBar({position,duration,onSeek}){
+  const[pos,setPos]=useState(position||0);
+  const drag=useRef(false);
+  useEffect(()=>{if(!drag.current)setPos(position||0);},[position]);
+  const pct=(pos/Math.max(1,duration||1))*100;
+  return(
+    <div style={{display:'flex',alignItems:'center',gap:'8px',width:'100%'}}>
+      <span style={{fontSize:'11px',color:T.muted,minWidth:'32px'}}>{fmt(Math.floor(pos/1000))}</span>
+      <div style={{flex:1,position:'relative',height:'16px',display:'flex',alignItems:'center'}}>
+        <div style={{position:'absolute',left:0,right:0,height:'3px',background:T.border,borderRadius:'4px'}}>
+          <div style={{width:pct+'%',height:'100%',background:T.spotify,borderRadius:'4px',transition:'width .5s linear'}}/>
+        </div>
+        <input type="range" min={0} max={duration||1} value={pos} style={{position:'absolute',inset:0,opacity:0,cursor:'pointer',color:T.spotify}}
+          onChange={e=>setPos(+e.target.value)} onMouseDown={()=>drag.current=true}
+          onMouseUp={e=>{drag.current=false;onSeek(+e.target.value);}}/>
+      </div>
+      <span style={{fontSize:'11px',color:T.muted,minWidth:'32px',textAlign:'right'}}>{fmt(Math.floor((duration||0)/1000))}</span>
+    </div>
+  );
+}
+
+/* ── Icon button helper ── */
+const IB=({children,onClick,style:s={}})=>(
+  <button onClick={onClick} style={{width:'36px',height:'36px',borderRadius:'50%',background:T.card,border:'1px solid '+T.border,color:T.mid,fontSize:'16px',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',transition:'all .15s',...s}}
+    onMouseOver={e=>{e.currentTarget.style.background=T.surf;e.currentTarget.style.color=T.text;}}
+    onMouseOut={e=>{e.currentTarget.style.background=s.background||T.card;e.currentTarget.style.color=s.color||T.mid;}}>
+    {children}
+  </button>
+);
+
+/* ══════════════════════════════════════
+   MAIN APP
+══════════════════════════════════════ */
+function App(){
+  /* ── Timer ── */
+  const[mode,setMode]=useState('focus');
+  const[timeLeft,setTimeLeft]=useState(25*60);
+  const[running,setRunning]=useState(false);
+  const[session,setSession]=useState(1);
+  const[settings,setSettings]=useState({focus:25,short:5,long:15,autoAdv:true,longAfter:4,notifs:false});
+  const[showSettings,setShowSettings]=useState(false);
+  const timerRef=useRef(null);
+  const modeTotal=useRef(25*60);
+
+  /* ── Spotify ── */
+  const[connected,setConnected]=useState({{ 'true' if connected else 'false' }});
+  const[premium,setPremium]=useState(false);
+  const[nowPlay,setNowPlay]=useState(null);
+  const[deviceId,setDeviceId]=useState(null);
+  const[vol,setVol]=useState(80);
+  const[searchQ,setSearchQ]=useState('');
+  const[results,setResults]=useState([]);
+  const[playlists,setPlaylists]=useState([]);
+  const[sdkReady,setSdkReady]=useState(false);
+  const pollRef=useRef(null);
+  const playerRef=useRef(null);
+
+  /* ── Ambient ── */
+  const[ambient,setAmbient]=useState(null);
+  const[ambVol,setAmbVol]=useState(30);
+  const ambRef=useRef(null);
+
+  /* ── Spotify init on load if connected ── */
+  useEffect(()=>{
+    if(!connected)return;
+    (async()=>{
+      const me=await sapi('/me');
+      const isPrem=me?.product==='premium';setPremium(isPrem);
+      const pl=await sapi('/me/playlists?limit=20');
+      if(pl?.items)setPlaylists(pl.items);
+      if(isPrem)initSDK();
+      else startPoll();
+    })();
+  },[connected]);
+
+  const initSDK=async()=>{
+    const sc=document.createElement('script');sc.src='https://sdk.scdn.co/spotify-player.js';document.head.appendChild(sc);
+    await new Promise(res=>{if(window.__sdkReady)res();else window.__sdkRes=res;});
+    const tok=await getToken();
+    const player=new window.Spotify.Player({
+      name:'Pomodoro @ GaiaSentinel',
+      getOAuthToken:async cb=>{const t=await getToken();cb(t);},
+      volume:vol/100,
+    });
+    player.addListener('ready',({device_id})=>{
+      setDeviceId(device_id);setSdkReady(true);
+      sapi('/me/player','PUT',{device_ids:[device_id]});
+    });
+    player.addListener('player_state_changed',st=>{
+      if(!st)return;
+      const tr=st.track_window.current_track;
+      setNowPlay({name:tr.name,artist:tr.artists.map(a=>a.name).join(', '),album:tr.album.name,art:tr.album.images[0]?.url,playing:!st.paused,duration:st.duration,position:st.position,uri:tr.uri});
+    });
+    player.connect();playerRef.current=player;
+  };
+
+  const startPoll=()=>{
+    const poll=async()=>{
+      const d=await sapi('/me/player');
+      if(d?.item)setNowPlay({name:d.item.name,artist:d.item.artists.map(a=>a.name).join(', '),album:d.item.album.name,art:d.item.album.images[0]?.url,playing:d.is_playing,duration:d.item.duration_ms,position:d.progress_ms,uri:d.item.uri});
+    };
+    poll();pollRef.current=setInterval(poll,3000);
+  };
+
+  /* Volume sync */
+  useEffect(()=>{if(playerRef.current)playerRef.current.setVolume(vol/100);},[vol]);
+
+  /* Cleanup */
+  useEffect(()=>()=>{ambRef.current?.stop();clearInterval(pollRef.current);playerRef.current?.disconnect();},[]);
+
+  /* ── Spotify controls ── */
+  const play =async()=>await sapi(`/me/player/play${deviceId?'?device_id='+deviceId:''}`, 'PUT');
+  const pause=async()=>await sapi('/me/player/pause','PUT');
+  const next =async()=>await sapi('/me/player/next','POST');
+  const prev =async()=>await sapi('/me/player/previous','POST');
+  const seek =async ms=>await sapi(`/me/player/seek?position_ms=${ms}${deviceId?'&device_id='+deviceId:''}`, 'PUT');
+  const playUri=async uri=>{
+    const isTrack=uri.includes(':track:');
+    const body=isTrack?{uris:[uri]}:{context_uri:uri};
+    if(deviceId)body.device_id=deviceId;
+    await sapi('/me/player/play','PUT',body);
+  };
+  const doSearch=async()=>{
+    if(!searchQ.trim())return;
+    const d=await sapi(`/search?q=${encodeURIComponent(searchQ)}&type=track,playlist&limit=8`);
+    const tracks=(d?.tracks?.items||[]).map(t=>({type:'track',name:t.name,sub:t.artists.map(a=>a.name).join(', '),art:t.album?.images[2]?.url,uri:t.uri}));
+    const pls=(d?.playlists?.items||[]).map(p=>({type:'playlist',name:p.name,sub:p.owner?.display_name,art:p.images[0]?.url,uri:p.uri}));
+    setResults([...tracks,...pls]);
+  };
+
+  /* ── Timer logic ── */
+  const switchMode=useCallback(k=>{
+    clearInterval(timerRef.current);setRunning(false);
+    const secs=settings[k==='focus'?'focus':k==='short'?'short':'long']*60;
+    modeTotal.current=secs;setMode(k);setTimeLeft(secs);
+  },[settings]);
+
+  const handleEnd=useCallback(()=>{
+    if(settings.notifs&&Notification.permission==='granted')
+      new Notification(mode==='focus'?'⏰ Break time! Great work 🎉':'🎯 Back to focus!');
+    if(settings.autoAdv){
+      if(mode==='focus'){
+        const ns=session>=settings.longAfter?1:session+1;
+        const nm=session>=settings.longAfter?'long':'short';
+        setSession(ns);switchMode(nm);setRunning(true);
+      } else {setSession(s=>mode==='long'?1:s);switchMode('focus');setRunning(true);}
+    } else setRunning(false);
+  },[mode,session,settings,switchMode]);
+
+  useEffect(()=>{
+    if(!running)return;
+    timerRef.current=setInterval(()=>{
+      setTimeLeft(t=>{if(t<=1){clearInterval(timerRef.current);handleEnd();return 0;}return t-1;});
+    },1000);
+    return()=>clearInterval(timerRef.current);
+  },[running,handleEnd]);
+
+  const toggleRun=()=>{
+    if(!running&&timeLeft===0){const s=settings[mode==='focus'?'focus':mode==='short'?'short':'long']*60;setTimeLeft(s);modeTotal.current=s;}
+    setRunning(r=>!r);
+  };
+  const reset=()=>{clearInterval(timerRef.current);setRunning(false);const s=settings[mode==='focus'?'focus':mode==='short'?'short':'long']*60;setTimeLeft(s);modeTotal.current=s;};
+
+  /* ── Keyboard shortcuts ── */
+  useEffect(()=>{
+    const h=e=>{
+      if(e.target.tagName==='INPUT'||e.target.tagName==='TEXTAREA')return;
+      if(e.code==='Space'){e.preventDefault();toggleRun();}
+      if(e.code==='KeyR')reset();
+    };
+    window.addEventListener('keydown',h);return()=>window.removeEventListener('keydown',h);
+  },[running,mode,settings]);
+
+  /* ── Ambient ── */
+  const toggleAmbient=t=>{
+    ambRef.current?.stop();ambRef.current=null;
+    if(ambient===t){setAmbient(null);return;}
+    setAmbient(t);ambRef.current=makeAmbient(t,ambVol);
+  };
+  useEffect(()=>{ambRef.current?.setVol(ambVol);},[ambVol]);
+
+  const requestNotif=async()=>{
+    const p=await Notification.requestPermission();
+    if(p==='granted')setSettings(s=>({...s,notifs:true}));
+  };
+
+  const m=MODE[mode];
+  const progress=modeTotal.current>0?timeLeft/modeTotal.current:0;
+
+  /* ── Error banner ── */
+  const urlError=new URLSearchParams(location.search).get('error');
+
+  return(
+    <div style={{height:'100vh',display:'flex',flexDirection:'column',background:T.bg,overflow:'hidden'}}>
+
+      {/* ── Error banner ── */}
+      {urlError&&(
+        <div style={{background:'#7F1D1D',borderBottom:'1px solid #991B1B',padding:'8px 24px',display:'flex',justifyContent:'space-between',alignItems:'center',flexShrink:0}}>
+          <span style={{fontSize:'13px',color:'#FCA5A5'}}>⚠ Spotify error: <strong>{decodeURIComponent(urlError)}</strong></span>
+          <a href="/" style={{color:'#FCA5A5',fontSize:'12px'}}>Dismiss ×</a>
+        </div>
+      )}
+
+      {/* ── Top bar ── */}
+      <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'12px 24px',borderBottom:'1px solid '+T.border,flexShrink:0}}>
+        <div style={{display:'flex',alignItems:'center',gap:'10px'}}>
+          <span style={{fontSize:'20px'}}>🍅</span>
+          <span style={{fontWeight:700,fontSize:'16px',color:T.text,letterSpacing:'-.3px'}}>Pomodoro</span>
+          <span style={{width:'1px',height:'14px',background:T.border}}/>
+          <span style={{fontSize:'11px',color:T.muted}}>Space · start &nbsp; R · reset</span>
+        </div>
+        <div style={{display:'flex',gap:'8px',alignItems:'center'}}>
+          {'Notification'in window&&Notification.permission==='default'&&(
+            <button onClick={requestNotif} style={{padding:'5px 11px',borderRadius:'8px',background:T.card,border:'1px solid '+T.border,color:T.mid,fontSize:'11px',cursor:'pointer'}}>🔔 Alerts</button>
+          )}
+          <button onClick={()=>setShowSettings(s=>!s)} style={{padding:'5px 11px',borderRadius:'8px',background:showSettings?m.color:T.card,border:'1px solid '+T.border,color:showSettings?'#000':T.mid,fontSize:'11px',cursor:'pointer',fontWeight:600,transition:'all .2s'}}>⚙ Settings</button>
+        </div>
+      </div>
+
+      {/* ── Body ── */}
+      <div style={{display:'flex',flex:1,overflow:'hidden'}}>
+
+        {/* ════ TIMER ════ */}
+        <div style={{flex:1,display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',gap:'18px',padding:'20px',overflowY:'auto'}}>
+
+          {/* Mode tabs */}
+          <div style={{display:'flex',gap:'4px',background:T.surf,borderRadius:'12px',padding:'4px',border:'1px solid '+T.border}}>
+            {Object.values(MODE).map(md=>(
+              <button key={md.key} onClick={()=>switchMode(md.key)} style={{padding:'7px 18px',borderRadius:'8px',border:'none',background:mode===md.key?m.color:'transparent',color:mode===md.key?'#000':T.muted,fontWeight:600,fontSize:'13px',cursor:'pointer',transition:'all .18s'}}>
+                {md.label}
+              </button>
+            ))}
+          </div>
+
+          {/* Ring + glow */}
+          <div style={{position:'relative'}}>
+            <Ring progress={progress} color={m.color} size={280}>
+              <div style={{textAlign:'center'}}>
+                <div style={{fontWeight:700,fontSize:'62px',color:T.text,lineHeight:1,letterSpacing:'-2px',fontVariantNumeric:'tabular-nums'}}>{fmt(timeLeft)}</div>
+                <div style={{fontSize:'13px',color:m.color,fontWeight:600,marginTop:'4px',letterSpacing:'.5px',textTransform:'uppercase'}}>{m.label}</div>
+                <div style={{fontSize:'11px',color:T.muted,marginTop:'3px'}}>Session {session}</div>
+              </div>
+            </Ring>
+            <div style={{position:'absolute',inset:0,borderRadius:'50%',background:m.dim,filter:'blur(40px)',zIndex:-1,pointerEvents:'none'}}/>
+          </div>
+
+          {/* Controls */}
+          <div style={{display:'flex',gap:'10px',alignItems:'center'}}>
+            <IB onClick={reset}>↺</IB>
+            <button onClick={toggleRun} style={{width:'70px',height:'70px',borderRadius:'50%',background:m.color,border:'none',color:'#000',fontSize:'26px',cursor:'pointer',fontWeight:700,display:'flex',alignItems:'center',justifyContent:'center',boxShadow:`0 0 28px ${m.color}55`,transition:'all .18s',transform:running?'scale(.96)':'scale(1)'}}>
+              {running?'⏸':'▶'}
+            </button>
+            <IB onClick={handleEnd} title="Skip">⏭</IB>
+          </div>
+
+          {/* Session dots */}
+          <div style={{display:'flex',gap:'8px',alignItems:'center'}}>
+            {Array.from({length:settings.longAfter}).map((_,i)=>(
+              <div key={i} style={{width:8+(i<session-1?2:0),height:8+(i<session-1?2:0),borderRadius:'50%',background:i<session-1?m.color:T.border,border:i===session-1&&mode==='focus'?'2px solid '+m.color:'none',transition:'all .3s'}}/>
+            ))}
+            <span style={{fontSize:'11px',color:T.muted,marginLeft:'4px'}}>{session}/{settings.longAfter} → Long</span>
+          </div>
+
+          {/* Ambient panel */}
+          <div style={{width:'100%',maxWidth:'340px',padding:'12px 16px',background:T.surf,borderRadius:'14px',border:'1px solid '+T.border,display:'flex',flexDirection:'column',gap:'10px'}}>
+            <div style={{display:'flex',alignItems:'center',justifyContent:'space-between'}}>
+              <span style={{fontSize:'12px',fontWeight:600,color:T.mid}}>🎧 Ambient Sound</span>
+              {ambient&&(
+                <div style={{display:'flex',alignItems:'center',gap:'6px',width:'110px'}}>
+                  <span style={{fontSize:'10px',color:T.muted}}>🔊</span>
+                  <input type="range" min={0} max={100} value={ambVol} onChange={e=>setAmbVol(+e.target.value)} style={{flex:1,color:m.color}}/>
+                </div>
+              )}
+            </div>
+            <div style={{display:'flex',gap:'5px'}}>
+              {[['rain','🌧','Rain'],['white','🌫','White'],['focus','🎵','Focus']].map(([k,e,l])=>(
+                <button key={k} onClick={()=>toggleAmbient(k)} style={{flex:1,padding:'6px',borderRadius:'10px',border:`1px solid ${ambient===k?m.color:T.border}`,background:ambient===k?m.dim:'transparent',color:ambient===k?m.color:T.muted,fontSize:'11px',fontWeight:600,cursor:'pointer',transition:'all .15s',display:'flex',flexDirection:'column',alignItems:'center',gap:'2px'}}>
+                  <span style={{fontSize:'17px'}}>{e}</span>{l}
+                </button>
+              ))}
+              <button onClick={()=>toggleAmbient(null)} style={{flex:.65,padding:'6px',borderRadius:'10px',border:`1px solid ${!ambient?'#FF6B6B':T.border}`,background:!ambient?'rgba(255,107,107,.1)':'transparent',color:!ambient?'#FF6B6B':T.muted,fontSize:'11px',fontWeight:600,cursor:'pointer',transition:'all .15s',display:'flex',flexDirection:'column',alignItems:'center',gap:'2px'}}>
+                <span style={{fontSize:'17px'}}>🔇</span>Off
+              </button>
+            </div>
+          </div>
+        </div>
+
+        {/* Divider */}
+        <div style={{width:'1px',background:T.border,flexShrink:0}}/>
+
+        {/* ════ SPOTIFY PANEL ════ */}
+        <div style={{width:'320px',display:'flex',flexDirection:'column',background:T.surf,overflow:'hidden',flexShrink:0}}>
+          {!connected?(
+            /* Not connected */
+            <div style={{flex:1,display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',padding:'28px',gap:'16px',textAlign:'center'}}>
+              <div style={{fontSize:'52px'}}>🎵</div>
+              <div style={{fontWeight:700,fontSize:'17px',color:T.text}}>Connect Spotify</div>
+              <div style={{fontSize:'13px',color:T.muted,lineHeight:1.7}}>Play music alongside your focus sessions. Spotify Premium unlocks browser playback; free accounts can control any active device.</div>
+              <a href="/login" style={{display:'block',padding:'12px 28px',borderRadius:'30px',background:T.spotify,color:'#000',fontWeight:700,fontSize:'14px',textDecoration:'none',boxShadow:'0 4px 20px rgba(29,185,84,.35)',transition:'transform .15s'}}
+                onMouseOver={e=>e.currentTarget.style.transform='scale(1.04)'} onMouseOut={e=>e.currentTarget.style.transform='scale(1)'}>
+                Connect with Spotify
+              </a>
+              <div style={{fontSize:'11px',color:T.muted,lineHeight:1.8}}>You'll be redirected to Spotify to authorise,<br/>then brought back here automatically.</div>
+            </div>
+          ):(
+            <div style={{flex:1,display:'flex',flexDirection:'column',overflow:'hidden'}}>
+              {/* Header */}
+              <div style={{padding:'13px 16px',borderBottom:'1px solid '+T.border,display:'flex',alignItems:'center',justifyContent:'space-between',flexShrink:0}}>
+                <div style={{display:'flex',alignItems:'center',gap:'7px'}}>
+                  <div style={{width:'8px',height:'8px',borderRadius:'50%',background:T.spotify,boxShadow:'0 0 6px '+T.spotify}}/>
+                  <span style={{fontSize:'13px',fontWeight:600,color:T.text}}>Spotify</span>
+                  {!premium&&<span style={{fontSize:'10px',color:T.muted,background:T.card,padding:'2px 7px',borderRadius:'10px'}}>Free</span>}
+                  {premium&&<span style={{fontSize:'10px',color:T.spotify,background:'rgba(29,185,84,.1)',padding:'2px 7px',borderRadius:'10px'}}>Premium</span>}
+                </div>
+                <a href="/logout" style={{color:T.muted,fontSize:'11px',textDecoration:'none',padding:'3px 7px',borderRadius:'6px'}}
+                  onMouseOver={e=>e.currentTarget.style.color=T.text} onMouseOut={e=>e.currentTarget.style.color=T.muted}>
+                  Disconnect
+                </a>
+              </div>
+
+              <div style={{flex:1,overflowY:'auto',padding:'14px'}}>
+
+                {/* Now playing */}
+                {nowPlay?(
+                  <div style={{marginBottom:'16px'}}>
+                    <div style={{display:'flex',gap:'12px',alignItems:'center',marginBottom:'12px'}}>
+                      {nowPlay.art
+                        ?<img src={nowPlay.art} alt="" style={{width:'60px',height:'60px',borderRadius:'8px',objectFit:'cover',flexShrink:0,boxShadow:'0 4px 16px rgba(0,0,0,.5)'}}/>
+                        :<div style={{width:'60px',height:'60px',borderRadius:'8px',background:T.card,display:'flex',alignItems:'center',justifyContent:'center',fontSize:'24px',flexShrink:0}}>🎵</div>
+                      }
+                      <div style={{minWidth:0}}>
+                        <div style={{fontWeight:700,fontSize:'13px',color:T.text,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{nowPlay.name}</div>
+                        <div style={{fontSize:'12px',color:T.muted,marginTop:'2px',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{nowPlay.artist}</div>
+                        <span style={{fontSize:'10px',color:T.muted,background:T.card,padding:'2px 7px',borderRadius:'10px',display:'inline-block',marginTop:'5px'}}>{nowPlay.album}</span>
+                      </div>
+                    </div>
+                    <SeekBar position={nowPlay.position} duration={nowPlay.duration} onSeek={seek}/>
+                    <div style={{display:'flex',alignItems:'center',justifyContent:'center',gap:'12px',marginTop:'12px'}}>
+                      <IB onClick={prev}>⏮</IB>
+                      <button onClick={nowPlay.playing?pause:play}
+                        style={{width:'44px',height:'44px',borderRadius:'50%',background:T.spotify,border:'none',color:'#000',fontSize:'20px',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',boxShadow:'0 2px 12px rgba(29,185,84,.4)',transition:'transform .15s'}}
+                        onMouseOver={e=>e.currentTarget.style.transform='scale(1.08)'} onMouseOut={e=>e.currentTarget.style.transform='scale(1)'}>
+                        {nowPlay.playing?'⏸':'▶'}
+                      </button>
+                      <IB onClick={next}>⏭</IB>
+                    </div>
+                    <div style={{display:'flex',alignItems:'center',gap:'8px',marginTop:'10px'}}>
+                      <span style={{fontSize:'13px',color:T.muted}}>🔈</span>
+                      <input type="range" min={0} max={100} value={vol} onChange={e=>setVol(+e.target.value)} style={{flex:1,color:T.spotify}}/>
+                      <span style={{fontSize:'13px',color:T.muted}}>🔊</span>
+                    </div>
+                  </div>
+                ):(
+                  <div style={{textAlign:'center',padding:'16px 0',color:T.muted,fontSize:'13px',marginBottom:'16px'}}>
+                    <div style={{fontSize:'28px',marginBottom:'6px',opacity:.35}}>🎵</div>
+                    {premium?'Waiting for the Spotify player to connect…':'Open Spotify on any device, then control it here.'}
+                  </div>
+                )}
+
+                <div style={{height:'1px',background:T.border,marginBottom:'14px'}}/>
+
+                {/* Search */}
+                <div style={{marginBottom:'12px'}}>
+                  <div style={{display:'flex',gap:'6px'}}>
+                    <input value={searchQ} onChange={e=>setSearchQ(e.target.value)} onKeyDown={e=>e.key==='Enter'&&doSearch()} placeholder="Search tracks & playlists…"
+                      style={{flex:1,background:T.card,border:'1px solid '+T.border,borderRadius:'8px',padding:'8px 11px',fontSize:'12px',color:T.text,outline:'none',transition:'border-color .15s'}}
+                      onFocus={e=>e.target.style.borderColor=T.spotify} onBlur={e=>e.target.style.borderColor=T.border}/>
+                    <button onClick={doSearch} style={{padding:'8px 12px',borderRadius:'8px',background:T.spotify,border:'none',color:'#000',fontWeight:700,fontSize:'13px',cursor:'pointer'}}>⏎</button>
+                  </div>
+                  {results.length>0&&(
+                    <div style={{marginTop:'8px',display:'flex',flexDirection:'column',gap:'3px',maxHeight:'220px',overflowY:'auto'}}>
+                      {results.map((r,i)=>(
+                        <button key={i} onClick={()=>playUri(r.uri)} style={{display:'flex',gap:'8px',alignItems:'center',padding:'7px 8px',borderRadius:'8px',background:'transparent',border:'1px solid transparent',cursor:'pointer',textAlign:'left',width:'100%',transition:'all .1s'}}
+                          onMouseOver={e=>{e.currentTarget.style.background=T.card;e.currentTarget.style.borderColor=T.border;}} onMouseOut={e=>{e.currentTarget.style.background='transparent';e.currentTarget.style.borderColor='transparent';}}>
+                          {r.art?<img src={r.art} alt="" style={{width:'34px',height:'34px',borderRadius:'5px',objectFit:'cover',flexShrink:0}}/>:<div style={{width:'34px',height:'34px',borderRadius:'5px',background:T.card,display:'flex',alignItems:'center',justifyContent:'center',fontSize:'15px',flexShrink:0}}>{r.type==='playlist'?'📋':'🎵'}</div>}
+                          <div style={{minWidth:0}}>
+                            <div style={{fontSize:'12px',fontWeight:600,color:T.text,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{r.name}</div>
+                            <div style={{fontSize:'10px',color:T.muted}}>{r.type==='playlist'?'Playlist · ':'Track · '}{r.sub}</div>
+                          </div>
+                          <span style={{fontSize:'13px',color:T.muted,marginLeft:'auto',flexShrink:0}}>▶</span>
+                        </button>
+                      ))}
+                      <button onClick={()=>setResults([])} style={{fontSize:'11px',color:T.muted,background:'none',border:'none',cursor:'pointer',padding:'4px',marginTop:'2px'}}>Clear results</button>
+                    </div>
+                  )}
+                </div>
+
+                {/* Playlists */}
+                {playlists.length>0&&!results.length&&(
+                  <div>
+                    <div style={{fontSize:'11px',fontWeight:700,color:T.muted,textTransform:'uppercase',letterSpacing:'.06em',marginBottom:'8px'}}>Your Playlists</div>
+                    <div style={{display:'flex',flexDirection:'column',gap:'3px'}}>
+                      {playlists.map((p,i)=>(
+                        <button key={i} onClick={()=>playUri(p.uri)} style={{display:'flex',gap:'8px',alignItems:'center',padding:'7px 8px',borderRadius:'8px',background:'transparent',border:'1px solid transparent',cursor:'pointer',textAlign:'left',width:'100%',transition:'all .1s'}}
+                          onMouseOver={e=>{e.currentTarget.style.background=T.card;e.currentTarget.style.borderColor=T.border;}} onMouseOut={e=>{e.currentTarget.style.background='transparent';e.currentTarget.style.borderColor='transparent';}}>
+                          {p.images?.[0]?.url?<img src={p.images[0].url} alt="" style={{width:'34px',height:'34px',borderRadius:'5px',objectFit:'cover',flexShrink:0}}/>:<div style={{width:'34px',height:'34px',borderRadius:'5px',background:T.card,display:'flex',alignItems:'center',justifyContent:'center',fontSize:'15px',flexShrink:0}}>📋</div>}
+                          <div style={{minWidth:0}}>
+                            <div style={{fontSize:'12px',fontWeight:600,color:T.text,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{p.name}</div>
+                            <div style={{fontSize:'10px',color:T.muted}}>{p.tracks?.total||0} tracks</div>
+                          </div>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* ════ SETTINGS MODAL ════ */}
+      {showSettings&&(
+        <div style={{position:'fixed',inset:0,background:'rgba(10,10,22,.8)',display:'flex',alignItems:'center',justifyContent:'center',zIndex:100,backdropFilter:'blur(8px)',padding:'20px'}} onClick={e=>e.target===e.currentTarget&&setShowSettings(false)}>
+          <div style={{background:T.card,border:'1px solid '+T.border,borderRadius:'20px',padding:'28px',width:'100%',maxWidth:'400px',boxShadow:'0 20px 60px rgba(0,0,0,.6)'}} className="pop">
+            <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'24px'}}>
+              <span style={{fontWeight:700,fontSize:'18px',color:T.text}}>⚙ Settings</span>
+              <button onClick={()=>setShowSettings(false)} style={{background:T.surf,border:'1px solid '+T.border,borderRadius:'50%',width:'32px',height:'32px',color:T.muted,cursor:'pointer',fontSize:'16px',display:'flex',alignItems:'center',justifyContent:'center'}}>×</button>
+            </div>
+            {[['focus','🍅 Focus (min)'],['short','☕ Short Break (min)'],['long','🌿 Long Break (min)'],['longAfter','🔁 Long break after N sessions']].map(([k,l])=>(
+              <div key={k} style={{marginBottom:'16px'}}>
+                <div style={{display:'flex',justifyContent:'space-between',marginBottom:'6px'}}>
+                  <label style={{fontSize:'13px',color:T.mid}}>{l}</label>
+                  <span style={{fontSize:'13px',fontWeight:700,color:T.text}}>{settings[k]}{k!=='longAfter'?' min':''}</span>
+                </div>
+                <input type="range" min={k==='longAfter'?2:1} max={k==='focus'?90:k==='long'?45:k==='longAfter'?8:30} value={settings[k]}
+                  onChange={e=>{const v=+e.target.value;setSettings(s=>({...s,[k]:v}));if(k===mode||k==='focus'&&mode==='focus'||k==='short'&&mode==='short'||k==='long'&&mode==='long'){modeTotal.current=v*60;setTimeLeft(v*60);}}}
+                  style={{color:m.color}}/>
+              </div>
+            ))}
+            <div style={{height:'1px',background:T.border,margin:'16px 0'}}/>
+            {[['autoAdv','Auto-advance to next mode'],['notifs','Session notifications']].map(([k,l])=>(
+              <div key={k} style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'12px'}}>
+                <span style={{fontSize:'13px',color:T.mid}}>{l}</span>
+                <button onClick={()=>k==='notifs'&&!settings.notifs?requestNotif():setSettings(s=>({...s,[k]:!s[k]}))}
+                  style={{width:'44px',height:'24px',borderRadius:'12px',background:settings[k]?m.color:T.surf,border:'1px solid '+T.border,cursor:'pointer',position:'relative',transition:'background .2s'}}>
+                  <div style={{width:'18px',height:'18px',borderRadius:'50%',background:'#fff',position:'absolute',top:'2px',transition:'left .2s',left:settings[k]?'22px':'2px'}}/>
+                </button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(<App/>);
+</script>
+</body>
+</html>
