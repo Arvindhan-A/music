@@ -166,4 +166,4 @@ def _do_refresh() -> bool:
 # ── Run ───────────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
-    app.run(debug=os.environ.get("FLASK_DEBUG", "0") == "1", port=5050)
+    app.run(debug=os.environ.get("FLASK_DEBUG", "0") == "1", port=5000)

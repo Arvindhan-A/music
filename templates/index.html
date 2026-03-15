@@ -12,17 +12,24 @@
 <style>
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
 html,body,#root{height:100%;overflow:hidden;}
-body{font-family:'Space Grotesk',system-ui,sans-serif;background:#0A0A16;color:#E8E8FF;}
+body{font-family:'Space Grotesk',system-ui,sans-serif;}
 input,button,select,textarea{font-family:inherit;}
-::-webkit-scrollbar{width:4px;}::-webkit-scrollbar-track{background:transparent;}::-webkit-scrollbar-thumb{background:#2A2A4A;border-radius:4px;}
+::-webkit-scrollbar{width:6px;}::-webkit-scrollbar-track{background:transparent;}::-webkit-scrollbar-thumb{background:rgba(128,128,128,.3);border-radius:3px;}
 input[type=range]{-webkit-appearance:none;appearance:none;background:transparent;cursor:pointer;width:100%;}
-input[type=range]::-webkit-slider-track{height:3px;background:#2A2A4A;border-radius:4px;}
-input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:13px;height:13px;border-radius:50%;background:currentColor;margin-top:-5px;transition:transform .1s;}
-input[type=range]:hover::-webkit-slider-thumb{transform:scale(1.2);}
-@keyframes fadeUp{from{opacity:0;transform:translateY(10px);}to{opacity:1;transform:translateY(0);}}
-@keyframes popIn{from{opacity:0;transform:scale(.94);}to{opacity:1;transform:scale(1);}}
-.fu{animation:fadeUp .22s ease both;}.pop{animation:popIn .18s ease both;}
-button:focus-visible{outline:2px solid rgba(255,255,255,.3);outline-offset:2px;}
+input[type=range]::-webkit-slider-track{height:4px;background:rgba(128,128,128,.2);border-radius:2px;}
+input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:14px;height:14px;border-radius:50%;background:currentColor;margin-top:-5px;transition:transform .15s,box-shadow .15s;}
+input[type=range]::-moz-range-thumb{width:14px;height:14px;border-radius:50%;background:currentColor;border:none;}
+input[type=range]:hover::-webkit-slider-thumb{transform:scale(1.15);box-shadow:0 0 10px currentColor;}
+@keyframes fadeUp{from{opacity:0;transform:translateY(12px);}to{opacity:1;transform:translateY(0);}}
+@keyframes popIn{from{opacity:0;transform:scale(.92);}to{opacity:1;transform:scale(1);}}
+@keyframes pulse{0%,100%{opacity:1;}50%{opacity:.6;}}
+@keyframes spin{from{transform:rotate(0deg);}to{transform:rotate(360deg);}}
+.fu{animation:fadeUp .25s ease-out both;}
+.pop{animation:popIn .2s ease-out both;}
+.pulse{animation:pulse 2s ease-in-out infinite;}
+button{cursor:pointer;border:none;outline:none;background:transparent;}
+button:focus-visible{outline:2px solid rgba(128,128,128,.5);outline-offset:2px;}
+@media(max-width:768px){.hide-mobile{display:none;}}
 </style>
 </head>
 <body>
@@ -35,19 +42,64 @@ button:focus-visible{outline:2px solid rgba(255,255,255,.3);outline-offset:2px;}
 {% raw %}
 const{useState,useEffect,useRef,useCallback}=React;
 
-/* ── Design tokens ── */
-const T={
-  bg:'#0A0A16',surf:'#12121E',card:'#1A1A2E',border:'rgba(255,255,255,.08)',
-  text:'#E8E8FF',mid:'#A0A0C0',muted:'#606080',
-  focus:'#34D399',short:'#818CF8',long:'#C084FC',spotify:'#1DB954',
-};
-const MODE={
-  focus:{key:'focus',label:'Focus',      color:T.focus, dim:'rgba(52,211,153,.12)',secs:25*60},
-  short:{key:'short',label:'Short Break',color:T.short, dim:'rgba(129,140,248,.12)',secs:5*60},
-  long: {key:'long', label:'Long Break', color:T.long,  dim:'rgba(192,132,252,.12)',secs:15*60},
+/* ═══════════════════════════════════════════════════════════════════════════
+   THEME SYSTEM
+═══════════════════════════════════════════════════════════════════════════ */
+const THEMES={
+  dark:{
+    name:'Dark',
+    bg:'#0A0A16',surf:'#12121E',card:'#1A1A2E',border:'rgba(255,255,255,.08)',
+    text:'#E8E8FF',mid:'#A0A0C0',muted:'#606080',accent:'#8B5CF6',
+    focus:'#34D399',short:'#818CF8',long:'#C084FC',spotify:'#1DB954'
+  },
+  light:{
+    name:'Light',
+    bg:'#F8F9FC',surf:'#FFFFFF',card:'#F0F1F5',border:'rgba(0,0,0,.08)',
+    text:'#1A1A2E',mid:'#4A4A5E',muted:'#8A8A9E',accent:'#7C3AED',
+    focus:'#059669',short:'#4F46E5',long:'#9333EA',spotify:'#1DB954'
+  },
+  ocean:{
+    name:'Ocean',
+    bg:'#0C1929',surf:'#0F2137',card:'#152A44',border:'rgba(56,189,248,.12)',
+    text:'#E0F2FE',mid:'#7DD3FC',muted:'#38BDF8',accent:'#0EA5E9',
+    focus:'#22D3EE',short:'#3B82F6',long:'#8B5CF6',spotify:'#1DB954'
+  },
+  sunset:{
+    name:'Sunset',
+    bg:'#1A0F0A',surf:'#241410',card:'#2E1A14',border:'rgba(251,146,60,.12)',
+    text:'#FFE4D6',mid:'#FDBA8C',muted:'#FB923C',accent:'#F97316',
+    focus:'#F59E0B',short:'#EF4444',long:'#EC4899',spotify:'#1DB954'
+  },
+  forest:{
+    name:'Forest',
+    bg:'#0A1A0F',surf:'#0F2414',card:'#142E1A',border:'rgba(34,197,94,.12)',
+    text:'#DCFCE7',mid:'#86EFAC',muted:'#22C55E',accent:'#16A34A',
+    focus:'#4ADE80',short:'#22C55E',long:'#10B981',spotify:'#1DB954'
+  },
+  midnight:{
+    name:'Midnight',
+    bg:'#030712',surf:'#0B0F19',card:'#111827',border:'rgba(99,102,241,.15)',
+    text:'#EEF2FF',mid:'#A5B4FC',muted:'#6366F1',accent:'#818CF8',
+    focus:'#34D399',short:'#6366F1',long:'#A855F7',spotify:'#1DB954'
+  }
 };
 
-/* ── Spotify helpers (token from server) ── */
+const getTheme=(name)=>THEMES[name]||THEMES.dark;
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   DESIGN TOKENS (mode colors - theme agnostic)
+═══════════════════════════════════════════════════════════════════════════ */
+const MODE={
+  focus:{key:'focus',label:'Focus',      secs:25*60},
+  short:{key:'short',label:'Short Break',secs:5*60},
+  long: {key:'long', label:'Long Break', secs:15*60},
+};
+
+// Mode colors are theme-dependent, assigned in component
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   SPOTIFY HELPERS
+═══════════════════════════════════════════════════════════════════════════ */
 let _cachedToken=null,_tokenExpiry=0;
 
 const getToken=async()=>{
@@ -56,7 +108,7 @@ const getToken=async()=>{
   if(!r.ok){_cachedToken=null;return null;}
   const d=await r.json();
   _cachedToken=d.access_token;
-  _tokenExpiry=Date.now()+50*60*1000; // 50 min safe window
+  _tokenExpiry=Date.now()+50*60*1000;
   return _cachedToken;
 };
 
@@ -73,7 +125,9 @@ const sapi=async(path,method='GET',body=null)=>{
   try{return await r.json();}catch{return null;}
 };
 
-/* ── Ambient sounds (pure Web Audio) ── */
+/* ═══════════════════════════════════════════════════════════════════════════
+   AMBIENT SOUNDS
+═══════════════════════════════════════════════════════════════════════════ */
 const makeAmbient=(type,vol)=>{
   const ctx=new AudioContext(),gain=ctx.createGain();
   gain.gain.value=vol/100*.25;gain.connect(ctx.destination);
@@ -100,60 +154,94 @@ const makeAmbient=(type,vol)=>{
 
 const fmt=s=>`${String(Math.floor(s/60)).padStart(2,'0')}:${String(s%60).padStart(2,'0')}`;
 
-/* ── Ring SVG ── */
-function Ring({progress,color,size=280,children}){
+/* ═══════════════════════════════════════════════════════════════════════════
+   SVG RING COMPONENT
+═══════════════════════════════════════════════════════════════════════════ */
+function Ring({progress,color,size=280,children,theme}){
   const r=size/2-16,circ=2*Math.PI*r;
   return(
     <div style={{position:'relative',width:size,height:size,flexShrink:0}}>
       <svg width={size} height={size} style={{position:'absolute',inset:0,transform:'rotate(-90deg)'}}>
-        <defs><filter id="glo"><feGaussianBlur stdDeviation="6" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter></defs>
-        <circle cx={size/2} cy={size/2} r={r} stroke={color+'22'} strokeWidth={10} fill="none"/>
-        <circle cx={size/2} cy={size/2} r={r} stroke={color} strokeWidth={10} fill="none"
+        <defs>
+          <filter id="glo"><feGaussianBlur stdDeviation="8" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+          <linearGradient id="grad" x1="0%" y1="0%" x2="100%" y2="100%">
+            <stop offset="0%" stopColor={color} stopOpacity="1"/>
+            <stop offset="100%" stopColor={color} stopOpacity=".7"/>
+          </linearGradient>
+        </defs>
+        <circle cx={size/2} cy={size/2} r={r} stroke={theme.border} strokeWidth={12} fill="none" strokeLinecap="round"/>
+        <circle cx={size/2} cy={size/2} r={r} stroke="url(#grad)" strokeWidth={12} fill="none"
           strokeDasharray={circ} strokeDashoffset={circ*(1-Math.max(0,Math.min(1,progress)))}
           strokeLinecap="round" filter="url(#glo)"
-          style={{transition:'stroke-dashoffset .5s linear,stroke .4s ease'}}/>
+          style={{transition:'stroke-dashoffset .5s linear'}}/>
       </svg>
       <div style={{position:'absolute',inset:0,display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center'}}>{children}</div>
     </div>
   );
 }
 
-/* ── Seek bar ── */
-function SeekBar({position,duration,onSeek}){
+/* ═══════════════════════════════════════════════════════════════════════════
+   SEEK BAR COMPONENT
+═══════════════════════════════════════════════════════════════════════════ */
+function SeekBar({position,duration,onSeek,theme}){
   const[pos,setPos]=useState(position||0);
   const drag=useRef(false);
   useEffect(()=>{if(!drag.current)setPos(position||0);},[position]);
   const pct=(pos/Math.max(1,duration||1))*100;
   return(
     <div style={{display:'flex',alignItems:'center',gap:'8px',width:'100%'}}>
-      <span style={{fontSize:'11px',color:T.muted,minWidth:'32px'}}>{fmt(Math.floor(pos/1000))}</span>
-      <div style={{flex:1,position:'relative',height:'16px',display:'flex',alignItems:'center'}}>
-        <div style={{position:'absolute',left:0,right:0,height:'3px',background:T.border,borderRadius:'4px'}}>
-          <div style={{width:pct+'%',height:'100%',background:T.spotify,borderRadius:'4px',transition:'width .5s linear'}}/>
+      <span style={{fontSize:'11px',color:theme.muted,minWidth:'32px',fontFamily:'Space Grotesk'}}>{fmt(Math.floor(pos/1000))}</span>
+      <div style={{flex:1,position:'relative',height:'20px',display:'flex',alignItems:'center'}}>
+        <div style={{position:'absolute',left:0,right:0,height:'4px',background:theme.card,borderRadius:'2px',overflow:'hidden'}}>
+          <div style={{width:pct+'%',height:'100%',background:theme.spotify,borderRadius:'2px',transition:'width .5s linear'}}/>
         </div>
-        <input type="range" min={0} max={duration||1} value={pos} style={{position:'absolute',inset:0,opacity:0,cursor:'pointer',color:T.spotify}}
+        <input type="range" min={0} max={duration||1} value={pos} style={{position:'absolute',inset:0,opacity:0,cursor:'pointer'}}
           onChange={e=>setPos(+e.target.value)} onMouseDown={()=>drag.current=true}
           onMouseUp={e=>{drag.current=false;onSeek(+e.target.value);}}/>
       </div>
-      <span style={{fontSize:'11px',color:T.muted,minWidth:'32px',textAlign:'right'}}>{fmt(Math.floor((duration||0)/1000))}</span>
+      <span style={{fontSize:'11px',color:theme.muted,minWidth:'32px',textAlign:'right',fontFamily:'Space Grotesk'}}>{fmt(Math.floor((duration||0)/1000))}</span>
     </div>
   );
 }
 
-/* ── Icon button helper ── */
-const IB=({children,onClick,style:s={}})=>(
-  <button onClick={onClick} style={{width:'36px',height:'36px',borderRadius:'50%',background:T.card,border:'1px solid '+T.border,color:T.mid,fontSize:'16px',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',transition:'all .15s',...s}}
-    onMouseOver={e=>{e.currentTarget.style.background=T.surf;e.currentTarget.style.color=T.text;}}
-    onMouseOut={e=>{e.currentTarget.style.background=s.background||T.card;e.currentTarget.style.color=s.color||T.mid;}}>
+/* ═══════════════════════════════════════════════════════════════════════════
+   ICON BUTTON
+═══════════════════════════════════════════════════════════════════════════ */
+const IB=({children,onClick,style:s={},theme,active})=>(
+  <button onClick={onClick} style={{width:'40px',height:'40px',borderRadius:'50%',background:active?theme.accent+'22':theme.card,border:'1px solid '+theme.border,color:active?theme.accent:theme.mid,fontSize:'17px',display:'flex',alignItems:'center',justifyContent:'center',transition:'all .18s cubic-bezier(.4,0,.2,1)',...s}}
+    onMouseOver={e=>{e.currentTarget.style.background=active?theme.accent+'33':theme.surf;e.currentTarget.style.color=active?theme.accent:theme.text;e.currentTarget.style.transform='scale(1.05)';}}
+    onMouseOut={e=>{e.currentTarget.style.background=active?theme.accent+'22':theme.card;e.currentTarget.style.color=active?theme.accent:theme.mid;e.currentTarget.style.transform='scale(1)';}}>
     {children}
   </button>
 );
 
-/* ══════════════════════════════════════
+/* ═══════════════════════════════════════════════════════════════════════════
+   THEME SELECTOR
+═══════════════════════════════════════════════════════════════════════════ */
+function ThemeSelector({current,onChange,theme}){
+  return(
+    <div style={{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:'8px',marginTop:'12px'}}>
+      {Object.entries(THEMES).map(([key,t])=>(
+        <button key={key} onClick={()=>onChange(key)} style={{padding:'10px 8px',borderRadius:'10px',background:current===key?t.accent+'22':theme.card,border:`2px solid ${current===key?t.accent:theme.border}`,display:'flex',flexDirection:'column',alignItems:'center',gap:'6px',transition:'all .2s'}}
+          onMouseOver={e=>{e.currentTarget.style.transform='scale(1.03)';}} onMouseOut={e=>{e.currentTarget.style.transform='scale(1)';}}>
+          <div style={{width:'24px',height:'24px',borderRadius:'50%',background:`linear-gradient(135deg,${t.focus},${t.short})`}}/>
+          <span style={{fontSize:'11px',fontWeight:600,color:current===key?t.accent:theme.muted}}>{t.name}</span>
+        </button>
+      ))}
+    </div>
+  );
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
    MAIN APP
-══════════════════════════════════════ */
+═══════════════════════════════════════════════════════════════════════════ */
 function App(){
-  /* ── Timer ── */
+  /* ── Theme State ── */
+  const[themeName,setThemeName]=useState(()=>localStorage.getItem('pomodoro_theme')||'dark');
+  const theme=getTheme(themeName);
+  const[showThemePicker,setShowThemePicker]=useState(false);
+
+  /* ── Timer State ── */
   const[mode,setMode]=useState('focus');
   const[timeLeft,setTimeLeft]=useState(25*60);
   const[running,setRunning]=useState(false);
@@ -163,7 +251,7 @@ function App(){
   const timerRef=useRef(null);
   const modeTotal=useRef(25*60);
 
-  /* ── Spotify ── */
+  /* ── Spotify State ── */
   {% endraw %}
   const[connected,setConnected]=useState({{ 'true' if connected else 'false' }});
   {% raw %}
@@ -178,12 +266,15 @@ function App(){
   const pollRef=useRef(null);
   const playerRef=useRef(null);
 
-  /* ── Ambient ── */
+  /* ── Ambient State ── */
   const[ambient,setAmbient]=useState(null);
   const[ambVol,setAmbVol]=useState(30);
   const ambRef=useRef(null);
 
-  /* ── Spotify init on load if connected ── */
+  /* ── Persist theme ── */
+  useEffect(()=>{localStorage.setItem('pomodoro_theme',themeName);},[themeName]);
+
+  /* ── Spotify init ── */
   useEffect(()=>{
     if(!connected)return;
     (async()=>{
@@ -225,10 +316,7 @@ function App(){
     poll();pollRef.current=setInterval(poll,3000);
   };
 
-  /* Volume sync */
   useEffect(()=>{if(playerRef.current)playerRef.current.setVolume(vol/100);},[vol]);
-
-  /* Cleanup */
   useEffect(()=>()=>{ambRef.current?.stop();clearInterval(pollRef.current);playerRef.current?.disconnect();},[]);
 
   /* ── Spotify controls ── */
@@ -284,7 +372,6 @@ function App(){
   };
   const reset=()=>{clearInterval(timerRef.current);setRunning(false);const s=settings[mode==='focus'?'focus':mode==='short'?'short':'long']*60;setTimeLeft(s);modeTotal.current=s;};
 
-  /* ── Keyboard shortcuts ── */
   useEffect(()=>{
     const h=e=>{
       if(e.target.tagName==='INPUT'||e.target.tagName==='TEXTAREA')return;
@@ -294,7 +381,6 @@ function App(){
     window.addEventListener('keydown',h);return()=>window.removeEventListener('keydown',h);
   },[running,mode,settings]);
 
-  /* ── Ambient ── */
   const toggleAmbient=t=>{
     ambRef.current?.stop();ambRef.current=null;
     if(ambient===t){setAmbient(null);return;}
@@ -307,36 +393,44 @@ function App(){
     if(p==='granted')setSettings(s=>({...s,notifs:true}));
   };
 
-  const m=MODE[mode];
+  const modeColor=mode==='focus'?theme.focus:mode==='short'?theme.short:theme.long;
+  const modeLabel=mode==='focus'?'Focus':mode==='short'?'Short Break':'Long Break';
+  const modeDim=modeColor+'15';
   const progress=modeTotal.current>0?timeLeft/modeTotal.current:0;
-
-  /* ── Error banner ── */
   const urlError=new URLSearchParams(location.search).get('error');
 
   return(
-    <div style={{height:'100vh',display:'flex',flexDirection:'column',background:T.bg,overflow:'hidden'}}>
+    <div style={{height:'100vh',display:'flex',flexDirection:'column',background:theme.bg,overflow:'hidden',transition:'background .3s'}}>
 
       {/* ── Error banner ── */}
       {urlError&&(
-        <div style={{background:'#7F1D1D',borderBottom:'1px solid #991B1B',padding:'8px 24px',display:'flex',justifyContent:'space-between',alignItems:'center',flexShrink:0}}>
-          <span style={{fontSize:'13px',color:'#FCA5A5'}}>⚠ Spotify error: <strong>{decodeURIComponent(urlError)}</strong></span>
-          <a href="/" style={{color:'#FCA5A5',fontSize:'12px'}}>Dismiss ×</a>
+        <div style={{background:theme.accent+'22',borderBottom:'1px solid '+theme.border,padding:'10px 24px',display:'flex',justifyContent:'space-between',alignItems:'center',flexShrink:0}}>
+          <span style={{fontSize:'13px',color:theme.accent}}>⚠ Spotify error: <strong style={{color:theme.text}}>{decodeURIComponent(urlError)}</strong></span>
+          <a href="/" style={{color:theme.muted,fontSize:'12px',textDecoration:'none'}} onMouseOver={e=>e.currentTarget.style.color=theme.text}>Dismiss ×</a>
         </div>
       )}
 
       {/* ── Top bar ── */}
-      <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'12px 24px',borderBottom:'1px solid '+T.border,flexShrink:0}}>
-        <div style={{display:'flex',alignItems:'center',gap:'10px'}}>
-          <span style={{fontSize:'20px'}}>🍅</span>
-          <span style={{fontWeight:700,fontSize:'16px',color:T.text,letterSpacing:'-.3px'}}>Pomodoro</span>
-          <span style={{width:'1px',height:'14px',background:T.border}}/>
-          <span style={{fontSize:'11px',color:T.muted}}>Space · start &nbsp; R · reset</span>
+      <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'14px 28px',borderBottom:'1px solid '+theme.border,flexShrink:0,background:theme.surf,transition:'all .3s'}}>
+        <div style={{display:'flex',alignItems:'center',gap:'12px'}}>
+          <div style={{fontSize:'24px',filter:'drop-shadow(0 2px 8px rgba(0,0,0,.3))'}}>🍅</div>
+          <div>
+            <div style={{fontWeight:700,fontSize:'17px',color:theme.text,letterSpacing:'-.3px'}}>Pomodoro</div>
+            <div style={{fontSize:'11px',color:theme.muted}}>Space · start &nbsp;•&nbsp; R · reset</div>
+          </div>
         </div>
         <div style={{display:'flex',gap:'8px',alignItems:'center'}}>
           {'Notification'in window&&Notification.permission==='default'&&(
-            <button onClick={requestNotif} style={{padding:'5px 11px',borderRadius:'8px',background:T.card,border:'1px solid '+T.border,color:T.mid,fontSize:'11px',cursor:'pointer'}}>🔔 Alerts</button>
+            <button onClick={requestNotif} style={{padding:'7px 13px',borderRadius:'10px',background:theme.card,border:'1px solid '+theme.border,color:theme.muted,fontSize:'12px',fontWeight:600,transition:'all .18s'}}
+              onMouseOver={e=>{e.currentTarget.style.background=theme.accent+'22';e.currentTarget.style.color=theme.accent;e.currentTarget.style.borderColor=theme.accent;}}
+              onMouseOut={e=>{e.currentTarget.style.background=theme.card;e.currentTarget.style.color=theme.muted;e.currentTarget.style.borderColor=theme.border;}}>🔔 Alerts</button>
           )}
-          <button onClick={()=>setShowSettings(s=>!s)} style={{padding:'5px 11px',borderRadius:'8px',background:showSettings?m.color:T.card,border:'1px solid '+T.border,color:showSettings?'#000':T.mid,fontSize:'11px',cursor:'pointer',fontWeight:600,transition:'all .2s'}}>⚙ Settings</button>
+          <button onClick={()=>setShowThemePicker(s=>!s)} style={{padding:'7px 13px',borderRadius:'10px',background:showThemePicker?theme.accent+'22':theme.card,border:'1px solid '+theme.border,color:showThemePicker?theme.accent:theme.muted,fontSize:'12px',fontWeight:600,transition:'all .18s'}}
+            onMouseOver={e=>{e.currentTarget.style.background=theme.accent+'22';e.currentTarget.style.color=theme.accent;}}
+            onMouseOut={e=>{if(!showThemePicker){e.currentTarget.style.background=theme.card;e.currentTarget.style.color=theme.muted;}}}>🎨 Theme</button>
+          <button onClick={()=>setShowSettings(s=>!s)} style={{padding:'7px 13px',borderRadius:'10px',background:showSettings?theme.accent+'22':theme.card,border:'1px solid '+theme.border,color:showSettings?theme.accent:theme.muted,fontSize:'12px',fontWeight:600,transition:'all .18s'}}
+            onMouseOver={e=>{e.currentTarget.style.background=theme.accent+'22';e.currentTarget.style.color=theme.accent;}}
+            onMouseOut={e=>{if(!showSettings){e.currentTarget.style.background=theme.card;e.currentTarget.style.color=theme.muted;}}}>⚙ Settings</button>
         </div>
       </div>
 
@@ -344,224 +438,257 @@ function App(){
       <div style={{display:'flex',flex:1,overflow:'hidden'}}>
 
         {/* ════ TIMER ════ */}
-        <div style={{flex:1,display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',gap:'18px',padding:'20px',overflowY:'auto'}}>
+        <div style={{flex:1,display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',gap:'20px',padding:'24px',overflowY:'auto',transition:'all .3s'}}>
 
           {/* Mode tabs */}
-          <div style={{display:'flex',gap:'4px',background:T.surf,borderRadius:'12px',padding:'4px',border:'1px solid '+T.border}}>
-            {Object.values(MODE).map(md=>(
-              <button key={md.key} onClick={()=>switchMode(md.key)} style={{padding:'7px 18px',borderRadius:'8px',border:'none',background:mode===md.key?m.color:'transparent',color:mode===md.key?'#000':T.muted,fontWeight:600,fontSize:'13px',cursor:'pointer',transition:'all .18s'}}>
-                {md.label}
-              </button>
-            ))}
+          <div style={{display:'flex',gap:'6px',background:theme.surf,borderRadius:'14px',padding:'5px',border:'1px solid '+theme.border,boxShadow:'0 4px 20px rgba(0,0,0,.2)'}}>
+            {Object.values(MODE).map(md=>{
+              const isActive=mode===md.key;
+              const color=md.key==='focus'?theme.focus:md.key==='short'?theme.short:theme.long;
+              return(
+                <button key={md.key} onClick={()=>switchMode(md.key)} style={{padding:'9px 22px',borderRadius:'10px',border:'none',background:isActive?color:'transparent',color:isActive?'#000':theme.muted,fontWeight:700,fontSize:'13px',cursor:'pointer',transition:'all .2s cubic-bezier(.4,0,.2,1)',boxShadow:isActive?`0 2px 12px ${color}55`:'none'}}
+                  onMouseOver={e=>{if(!isActive){e.currentTarget.style.background=theme.card;e.currentTarget.style.color=theme.text;}}}
+                  onMouseOut={e=>{if(!isActive){e.currentTarget.style.background='transparent';e.currentTarget.style.color=theme.muted;}}}>
+                  {md.label}
+                </button>
+              );
+            })}
           </div>
 
           {/* Ring + glow */}
           <div style={{position:'relative'}}>
-            <Ring progress={progress} color={m.color} size={280}>
+            <Ring progress={progress} color={modeColor} size={300} theme={theme}>
               <div style={{textAlign:'center'}}>
-                <div style={{fontWeight:700,fontSize:'62px',color:T.text,lineHeight:1,letterSpacing:'-2px',fontVariantNumeric:'tabular-nums'}}>{fmt(timeLeft)}</div>
-                <div style={{fontSize:'13px',color:m.color,fontWeight:600,marginTop:'4px',letterSpacing:'.5px',textTransform:'uppercase'}}>{m.label}</div>
-                <div style={{fontSize:'11px',color:T.muted,marginTop:'3px'}}>Session {session}</div>
+                <div style={{fontWeight:800,fontSize:'72px',color:theme.text,lineHeight:1,letterSpacing:'-3px',fontVariantNumeric:'tabular-nums',textShadow:`0 0 40px ${modeDim}`}}>{fmt(timeLeft)}</div>
+                <div style={{fontSize:'14px',color:modeColor,fontWeight:700,marginTop:'8px',letterSpacing:'1px',textTransform:'uppercase'}}>{modeLabel}</div>
+                <div style={{fontSize:'12px',color:theme.muted,marginTop:'6px',background:theme.card,padding:'4px 14px',borderRadius:'20px',border:'1px solid '+theme.border}}>Session {session}</div>
               </div>
             </Ring>
-            <div style={{position:'absolute',inset:0,borderRadius:'50%',background:m.dim,filter:'blur(40px)',zIndex:-1,pointerEvents:'none'}}/>
+            <div style={{position:'absolute',inset:0,borderRadius:'50%',background:modeDim,filter:'blur(60px)',zIndex:-1,pointerEvents:'none',animation:'pulse 3s ease-in-out infinite'}}/>
           </div>
 
           {/* Controls */}
-          <div style={{display:'flex',gap:'10px',alignItems:'center'}}>
-            <IB onClick={reset}>↺</IB>
-            <button onClick={toggleRun} style={{width:'70px',height:'70px',borderRadius:'50%',background:m.color,border:'none',color:'#000',fontSize:'26px',cursor:'pointer',fontWeight:700,display:'flex',alignItems:'center',justifyContent:'center',boxShadow:`0 0 28px ${m.color}55`,transition:'all .18s',transform:running?'scale(.96)':'scale(1)'}}>
+          <div style={{display:'flex',gap:'14px',alignItems:'center',marginTop:'8px'}}>
+            <IB theme={theme} onClick={reset} title="Reset">↺</IB>
+            <button onClick={toggleRun} style={{width:'84px',height:'84px',borderRadius:'50%',background:modeColor,border:'none',color:'#000',fontSize:'30px',fontWeight:800,display:'flex',alignItems:'center',justifyContent:'center',boxShadow:`0 8px 40px ${modeColor}66`,transition:'all .2s cubic-bezier(.4,0,.2,1)',cursor:'pointer'}}
+              onMouseOver={e=>{e.currentTarget.style.transform='scale(1.08)';e.currentTarget.style.boxShadow=`0 12px 50px ${modeColor}88`;}}
+              onMouseOut={e=>{e.currentTarget.style.transform='scale(1)';e.currentTarget.style.boxShadow=`0 8px 40px ${modeColor}66`;}}>
               {running?'⏸':'▶'}
             </button>
-            <IB onClick={handleEnd} title="Skip">⏭</IB>
+            <IB theme={theme} onClick={handleEnd} title="Skip">⏭</IB>
           </div>
 
           {/* Session dots */}
-          <div style={{display:'flex',gap:'8px',alignItems:'center'}}>
+          <div style={{display:'flex',gap:'10px',alignItems:'center',marginTop:'4px'}}>
             {Array.from({length:settings.longAfter}).map((_,i)=>(
-              <div key={i} style={{width:8+(i<session-1?2:0),height:8+(i<session-1?2:0),borderRadius:'50%',background:i<session-1?m.color:T.border,border:i===session-1&&mode==='focus'?'2px solid '+m.color:'none',transition:'all .3s'}}/>
+              <div key={i} style={{width:i<session-1?10:8,height:i<session-1?10:8,borderRadius:'50%',background:i<session-1?modeColor:theme.card,border:`2px solid ${i===session-1&&mode==='focus'?modeColor:theme.border}`,transition:'all .35s cubic-bezier(.4,0,.2,1)',boxShadow:i<session-1?`0 0 12px ${modeColor}66`:'none'}}/>
             ))}
-            <span style={{fontSize:'11px',color:T.muted,marginLeft:'4px'}}>{session}/{settings.longAfter} → Long</span>
+            <span style={{fontSize:'12px',color:theme.muted,marginLeft:'6px',fontWeight:500}}>{session}/{settings.longAfter} → Long break</span>
           </div>
 
           {/* Ambient panel */}
-          <div style={{width:'100%',maxWidth:'340px',padding:'12px 16px',background:T.surf,borderRadius:'14px',border:'1px solid '+T.border,display:'flex',flexDirection:'column',gap:'10px'}}>
+          <div style={{width:'100%',maxWidth:'380px',padding:'16px 18px',background:theme.surf,borderRadius:'16px',border:'1px solid '+theme.border,display:'flex',flexDirection:'column',gap:'12px',boxShadow:'0 4px 20px rgba(0,0,0,.15)'}}>
             <div style={{display:'flex',alignItems:'center',justifyContent:'space-between'}}>
-              <span style={{fontSize:'12px',fontWeight:600,color:T.mid}}>🎧 Ambient Sound</span>
+              <span style={{fontSize:'13px',fontWeight:700,color:theme.text}}>🎧 Ambient Sound</span>
               {ambient&&(
-                <div style={{display:'flex',alignItems:'center',gap:'6px',width:'110px'}}>
-                  <span style={{fontSize:'10px',color:T.muted}}>🔊</span>
-                  <input type="range" min={0} max={100} value={ambVol} onChange={e=>setAmbVol(+e.target.value)} style={{flex:1,color:m.color}}/>
+                <div style={{display:'flex',alignItems:'center',gap:'8px',width:'120px'}}>
+                  <span style={{fontSize:'12px',color:theme.muted}}>🔊</span>
+                  <input type="range" min={0} max={100} value={ambVol} onChange={e=>setAmbVol(+e.target.value)} style={{flex:1,color:modeColor}}/>
                 </div>
               )}
             </div>
-            <div style={{display:'flex',gap:'5px'}}>
-              {[['rain','🌧','Rain'],['white','🌫','White'],['focus','🎵','Focus']].map(([k,e,l])=>(
-                <button key={k} onClick={()=>toggleAmbient(k)} style={{flex:1,padding:'6px',borderRadius:'10px',border:`1px solid ${ambient===k?m.color:T.border}`,background:ambient===k?m.dim:'transparent',color:ambient===k?m.color:T.muted,fontSize:'11px',fontWeight:600,cursor:'pointer',transition:'all .15s',display:'flex',flexDirection:'column',alignItems:'center',gap:'2px'}}>
-                  <span style={{fontSize:'17px'}}>{e}</span>{l}
+            <div style={{display:'flex',gap:'6px'}}>
+              {[['rain','🌧','Rain'],['white','🌫','White Noise'],['focus','🎵','Focus Tones']].map(([k,e,l])=>(
+                <button key={k} onClick={()=>toggleAmbient(k)} style={{flex:1,padding:'10px 8px',borderRadius:'12px',border:`2px solid ${ambient===k?modeColor:theme.border}`,background:ambient===k?modeDim:'transparent',color:ambient===k?modeColor:theme.muted,fontSize:'12px',fontWeight:700,transition:'all .18s',display:'flex',flexDirection:'column',alignItems:'center',gap:'4px'}}
+                  onMouseOver={e=>{if(ambient!==k){e.currentTarget.style.background=theme.card;e.currentTarget.style.borderColor=theme.accent;}}}
+                  onMouseOut={e=>{if(ambient!==k){e.currentTarget.style.background='transparent';e.currentTarget.style.borderColor=theme.border;}}}>
+                  <span style={{fontSize:'20px'}}>{e}</span>{l}
                 </button>
               ))}
-              <button onClick={()=>toggleAmbient(null)} style={{flex:.65,padding:'6px',borderRadius:'10px',border:`1px solid ${!ambient?'#FF6B6B':T.border}`,background:!ambient?'rgba(255,107,107,.1)':'transparent',color:!ambient?'#FF6B6B':T.muted,fontSize:'11px',fontWeight:600,cursor:'pointer',transition:'all .15s',display:'flex',flexDirection:'column',alignItems:'center',gap:'2px'}}>
-                <span style={{fontSize:'17px'}}>🔇</span>Off
+              <button onClick={()=>toggleAmbient(null)} style={{flex:.7,padding:'10px 8px',borderRadius:'12px',border:`2px solid ${!ambient?'#EF4444':theme.border}`,background:!ambient?'rgba(239,68,68,.1)':'transparent',color:!ambient?'#EF4444':theme.muted,fontSize:'12px',fontWeight:700,transition:'all .18s',display:'flex',flexDirection:'column',alignItems:'center',gap:'4px'}}>
+                <span style={{fontSize:'20px'}}>🔇</span>Off
               </button>
             </div>
           </div>
         </div>
 
         {/* Divider */}
-        <div style={{width:'1px',background:T.border,flexShrink:0}}/>
+        <div style={{width:'1px',background:theme.border,flexShrink:0}}/>
 
         {/* ════ SPOTIFY PANEL ════ */}
-        <div style={{width:'320px',display:'flex',flexDirection:'column',background:T.surf,overflow:'hidden',flexShrink:0}}>
+        <div style={{width:'340px',display:'flex',flexDirection:'column',background:theme.surf,overflow:'hidden',flexShrink:0,transition:'all .3s'}}>
           {!connected?(
-            /* Not connected */
-            <div style={{flex:1,display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',padding:'28px',gap:'16px',textAlign:'center'}}>
-              <div style={{fontSize:'52px'}}>🎵</div>
-              <div style={{fontWeight:700,fontSize:'17px',color:T.text}}>Connect Spotify</div>
-              <div style={{fontSize:'13px',color:T.muted,lineHeight:1.7}}>Play music alongside your focus sessions. Spotify Premium unlocks browser playback; free accounts can control any active device.</div>
-              <a href="/login" style={{display:'block',padding:'12px 28px',borderRadius:'30px',background:T.spotify,color:'#000',fontWeight:700,fontSize:'14px',textDecoration:'none',boxShadow:'0 4px 20px rgba(29,185,84,.35)',transition:'transform .15s'}}
-                onMouseOver={e=>e.currentTarget.style.transform='scale(1.04)'} onMouseOut={e=>e.currentTarget.style.transform='scale(1)'}>
+            <div style={{flex:1,display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',padding:'32px',gap:'18px',textAlign:'center'}}>
+              <div style={{fontSize:'64px',filter:'drop-shadow(0 4px 16px rgba(0,0,0,.4))'}}>🎵</div>
+              <div style={{fontWeight:700,fontSize:'19px',color:theme.text}}>Connect Spotify</div>
+              <div style={{fontSize:'13px',color:theme.muted,lineHeight:1.8,maxWidth:'260px'}}>Play music alongside your focus sessions. Premium unlocks browser playback; free accounts control any active device.</div>
+              <a href="/login" style={{display:'inline-block',padding:'14px 32px',borderRadius:'30px',background:theme.spotify,color:'#000',fontWeight:700,fontSize:'15px',textDecoration:'none',boxShadow:'0 6px 28px rgba(29,185,84,.4)',transition:'all .2s'}}
+                onMouseOver={e=>{e.currentTarget.style.transform='scale(1.06)';e.currentTarget.style.boxShadow='0 8px 36px rgba(29,185,84,.55)';}}
+                onMouseOut={e=>{e.currentTarget.style.transform='scale(1)';e.currentTarget.style.boxShadow='0 6px 28px rgba(29,185,84,.4)';}}>
                 Connect with Spotify
               </a>
-              <div style={{fontSize:'11px',color:T.muted,lineHeight:1.8}}>You'll be redirected to Spotify to authorise,<br/>then brought back here automatically.</div>
+              <div style={{fontSize:'11px',color:theme.muted,lineHeight:1.7}}>Redirects to Spotify • Secure OAuth</div>
             </div>
           ):(
             <div style={{flex:1,display:'flex',flexDirection:'column',overflow:'hidden'}}>
               {/* Header */}
-              <div style={{padding:'13px 16px',borderBottom:'1px solid '+T.border,display:'flex',alignItems:'center',justifyContent:'space-between',flexShrink:0}}>
-                <div style={{display:'flex',alignItems:'center',gap:'7px'}}>
-                  <div style={{width:'8px',height:'8px',borderRadius:'50%',background:T.spotify,boxShadow:'0 0 6px '+T.spotify}}/>
-                  <span style={{fontSize:'13px',fontWeight:600,color:T.text}}>Spotify</span>
-                  {!premium&&<span style={{fontSize:'10px',color:T.muted,background:T.card,padding:'2px 7px',borderRadius:'10px'}}>Free</span>}
-                  {premium&&<span style={{fontSize:'10px',color:T.spotify,background:'rgba(29,185,84,.1)',padding:'2px 7px',borderRadius:'10px'}}>Premium</span>}
+              <div style={{padding:'15px 18px',borderBottom:'1px solid '+theme.border,display:'flex',alignItems:'center',justifyContent:'space-between',flexShrink:0}}>
+                <div style={{display:'flex',alignItems:'center',gap:'9px'}}>
+                  <div style={{width:'10px',height:'10px',borderRadius:'50%',background:theme.spotify,boxShadow:`0 0 10px ${theme.spotify}`}}/>
+                  <span style={{fontSize:'14px',fontWeight:700,color:theme.text}}>Spotify</span>
+                  {!premium&&<span style={{fontSize:'10px',color:theme.muted,background:theme.card,padding:'3px 9px',borderRadius:'12px',border:'1px solid '+theme.border}}>Free</span>}
+                  {premium&&<span style={{fontSize:'10px',color:theme.spotify,background:theme.spotify+'15',padding:'3px 9px',borderRadius:'12px',border:'1px solid '+theme.spotify+'33'}}>Premium</span>}
                 </div>
-                <a href="/logout" style={{color:T.muted,fontSize:'11px',textDecoration:'none',padding:'3px 7px',borderRadius:'6px'}}
-                  onMouseOver={e=>e.currentTarget.style.color=T.text} onMouseOut={e=>e.currentTarget.style.color=T.muted}>
+                <a href="/logout" style={{color:theme.muted,fontSize:'12px',textDecoration:'none',padding:'5px 10px',borderRadius:'8px',transition:'all .18s'}}
+                  onMouseOver={e=>{e.currentTarget.style.color=theme.text;e.currentTarget.style.background=theme.card;}} onMouseOut={e=>{e.currentTarget.style.color=theme.muted;e.currentTarget.style.background='transparent';}}>
                   Disconnect
                 </a>
               </div>
 
-              <div style={{flex:1,overflowY:'auto',padding:'14px'}}>
+              <div style={{flex:1,overflowY:'auto',padding:'16px'}}>
 
                 {/* Now playing */}
                 {nowPlay?(
-                  <div style={{marginBottom:'16px'}}>
-                    <div style={{display:'flex',gap:'12px',alignItems:'center',marginBottom:'12px'}}>
+                  <div style={{marginBottom:'18px'}}>
+                    <div style={{display:'flex',gap:'14px',alignItems:'center',marginBottom:'14px'}}>
                       {nowPlay.art
-                        ?<img src={nowPlay.art} alt="" style={{width:'60px',height:'60px',borderRadius:'8px',objectFit:'cover',flexShrink:0,boxShadow:'0 4px 16px rgba(0,0,0,.5)'}}/>
-                        :<div style={{width:'60px',height:'60px',borderRadius:'8px',background:T.card,display:'flex',alignItems:'center',justifyContent:'center',fontSize:'24px',flexShrink:0}}>🎵</div>
+                        ?<img src={nowPlay.art} alt="" style={{width:'68px',height:'68px',borderRadius:'12px',objectFit:'cover',flexShrink:0,boxShadow:'0 6px 24px rgba(0,0,0,.5)',border:'1px solid '+theme.border}}/>
+                        :<div style={{width:'68px',height:'68px',borderRadius:'12px',background:theme.card,display:'flex',alignItems:'center',justifyContent:'center',fontSize:'28px',flexShrink:0,border:'1px solid '+theme.border}}>🎵</div>
                       }
-                      <div style={{minWidth:0}}>
-                        <div style={{fontWeight:700,fontSize:'13px',color:T.text,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{nowPlay.name}</div>
-                        <div style={{fontSize:'12px',color:T.muted,marginTop:'2px',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{nowPlay.artist}</div>
-                        <span style={{fontSize:'10px',color:T.muted,background:T.card,padding:'2px 7px',borderRadius:'10px',display:'inline-block',marginTop:'5px'}}>{nowPlay.album}</span>
+                      <div style={{minWidth:0,flex:1}}>
+                        <div style={{fontWeight:700,fontSize:'14px',color:theme.text,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',marginBottom:'4px'}}>{nowPlay.name}</div>
+                        <div style={{fontSize:'12px',color:theme.muted,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{nowPlay.artist}</div>
+                        <div style={{fontSize:'11px',color:theme.muted,marginTop:'4px',opacity:.8}}>{nowPlay.album}</div>
                       </div>
                     </div>
-                    <SeekBar position={nowPlay.position} duration={nowPlay.duration} onSeek={seek}/>
-                    <div style={{display:'flex',alignItems:'center',justifyContent:'center',gap:'12px',marginTop:'12px'}}>
-                      <IB onClick={prev}>⏮</IB>
-                      <button onClick={nowPlay.playing?pause:play}
-                        style={{width:'44px',height:'44px',borderRadius:'50%',background:T.spotify,border:'none',color:'#000',fontSize:'20px',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',boxShadow:'0 2px 12px rgba(29,185,84,.4)',transition:'transform .15s'}}
-                        onMouseOver={e=>e.currentTarget.style.transform='scale(1.08)'} onMouseOut={e=>e.currentTarget.style.transform='scale(1)'}>
-                        {nowPlay.playing?'⏸':'▶'}
-                      </button>
-                      <IB onClick={next}>⏭</IB>
-                    </div>
-                    <div style={{display:'flex',alignItems:'center',gap:'8px',marginTop:'10px'}}>
-                      <span style={{fontSize:'13px',color:T.muted}}>🔈</span>
-                      <input type="range" min={0} max={100} value={vol} onChange={e=>setVol(+e.target.value)} style={{flex:1,color:T.spotify}}/>
-                      <span style={{fontSize:'13px',color:T.muted}}>🔊</span>
+                    <SeekBar position={nowPlay.position} duration={nowPlay.duration} onSeek={seek} theme={theme}/>
+                    <div style={{display:'flex',gap:'8px',marginTop:'14px',justifyContent:'center'}}>
+                      <IB theme={theme} onClick={prev} title="Previous">⏮</IB>
+                      <IB theme={theme} onClick={nowPlay.playing?pause:play} active={nowPlay.playing} title={nowPlay.playing?'Pause':'Play'} style={{width:'48px',height:'48px',fontSize:'20px'}}>{nowPlay.playing?'⏸':'▶'}</IB>
+                      <IB theme={theme} onClick={next} title="Next">⏭</IB>
                     </div>
                   </div>
                 ):(
-                  <div style={{textAlign:'center',padding:'16px 0',color:T.muted,fontSize:'13px',marginBottom:'16px'}}>
-                    <div style={{fontSize:'28px',marginBottom:'6px',opacity:.35}}>🎵</div>
-                    {premium?'Waiting for the Spotify player to connect…':'Open Spotify on any device, then control it here.'}
+                  <div style={{padding:'32px 0',textAlign:'center',color:theme.muted}}>
+                    <div style={{fontSize:'42px',marginBottom:'12px',opacity:.5}}>🎵</div>
+                    <div style={{fontSize:'13px'}}>Nothing playing</div>
                   </div>
                 )}
-
-                <div style={{height:'1px',background:T.border,marginBottom:'14px'}}/>
 
                 {/* Search */}
-                <div style={{marginBottom:'12px'}}>
-                  <div style={{display:'flex',gap:'6px'}}>
-                    <input value={searchQ} onChange={e=>setSearchQ(e.target.value)} onKeyDown={e=>e.key==='Enter'&&doSearch()} placeholder="Search tracks & playlists…"
-                      style={{flex:1,background:T.card,border:'1px solid '+T.border,borderRadius:'8px',padding:'8px 11px',fontSize:'12px',color:T.text,outline:'none',transition:'border-color .15s'}}
-                      onFocus={e=>e.target.style.borderColor=T.spotify} onBlur={e=>e.target.style.borderColor=T.border}/>
-                    <button onClick={doSearch} style={{padding:'8px 12px',borderRadius:'8px',background:T.spotify,border:'none',color:'#000',fontWeight:700,fontSize:'13px',cursor:'pointer'}}>⏎</button>
+                <div style={{marginBottom:'16px'}}>
+                  <div style={{display:'flex',gap:'8px',marginBottom:'12px'}}>
+                    <input type="text" value={searchQ} onChange={e=>setSearchQ(e.target.value)} onKeyDown={e=>e.key==='Enter'&&doSearch()} placeholder="Search tracks, playlists..."
+                      style={{flex:1,padding:'11px 14px',borderRadius:'12px',background:theme.card,border:'1px solid '+theme.border,color:theme.text,fontSize:'13px',outline:'none',transition:'all .18s'}}
+                      onFocus={e=>{e.currentTarget.style.borderColor=theme.accent;}} onBlur={e=>{e.currentTarget.style.borderColor=theme.border;}}/>
+                    <button onClick={doSearch} style={{padding:'11px 16px',borderRadius:'12px',background:theme.accent,color:'#000',fontWeight:700,fontSize:'13px',transition:'all .18s'}}
+                      onMouseOver={e=>{e.currentTarget.style.transform='scale(1.05)';}} onMouseOut={e=>{e.currentTarget.style.transform='scale(1)';}}>Search</button>
                   </div>
-                  {results.length>0&&(
-                    <div style={{marginTop:'8px',display:'flex',flexDirection:'column',gap:'3px',maxHeight:'220px',overflowY:'auto'}}>
-                      {results.map((r,i)=>(
-                        <button key={i} onClick={()=>playUri(r.uri)} style={{display:'flex',gap:'8px',alignItems:'center',padding:'7px 8px',borderRadius:'8px',background:'transparent',border:'1px solid transparent',cursor:'pointer',textAlign:'left',width:'100%',transition:'all .1s'}}
-                          onMouseOver={e=>{e.currentTarget.style.background=T.card;e.currentTarget.style.borderColor=T.border;}} onMouseOut={e=>{e.currentTarget.style.background='transparent';e.currentTarget.style.borderColor='transparent';}}>
-                          {r.art?<img src={r.art} alt="" style={{width:'34px',height:'34px',borderRadius:'5px',objectFit:'cover',flexShrink:0}}/>:<div style={{width:'34px',height:'34px',borderRadius:'5px',background:T.card,display:'flex',alignItems:'center',justifyContent:'center',fontSize:'15px',flexShrink:0}}>{r.type==='playlist'?'📋':'🎵'}</div>}
-                          <div style={{minWidth:0}}>
-                            <div style={{fontSize:'12px',fontWeight:600,color:T.text,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{r.name}</div>
-                            <div style={{fontSize:'10px',color:T.muted}}>{r.type==='playlist'?'Playlist · ':'Track · '}{r.sub}</div>
-                          </div>
-                          <span style={{fontSize:'13px',color:T.muted,marginLeft:'auto',flexShrink:0}}>▶</span>
-                        </button>
-                      ))}
-                      <button onClick={()=>setResults([])} style={{fontSize:'11px',color:T.muted,background:'none',border:'none',cursor:'pointer',padding:'4px',marginTop:'2px'}}>Clear results</button>
-                    </div>
-                  )}
                 </div>
 
+                {/* Results */}
+                {results.length>0&&(
+                  <div style={{marginBottom:'16px',maxHeight:'200px',overflowY:'auto'}}>
+                    {results.map((r,i)=>(
+                      <div key={i} onClick={()=>playUri(r.uri)} style={{display:'flex',gap:'10px',padding:'9px 12px',borderRadius:'10px',cursor:'pointer',transition:'all .15s',border:'1px solid transparent'}}
+                        onMouseOver={e=>{e.currentTarget.style.background=theme.card;e.currentTarget.style.borderColor=theme.border;}}
+                        onMouseOut={e=>{e.currentTarget.style.background='transparent';e.currentTarget.style.borderColor='transparent';}}>
+                        {r.art?<img src={r.art} alt="" style={{width:'42px',height:'42px',borderRadius:'8px',objectFit:'cover'}}/>:<div style={{width:'42px',height:'42px',borderRadius:'8px',background:theme.card,display:'flex',alignItems:'center',justifyContent:'center',fontSize:'18px'}}>🎵</div>}
+                        <div style={{minWidth:0,flex:1}}>
+                          <div style={{fontWeight:600,fontSize:'12px',color:theme.text,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{r.name}</div>
+                          <div style={{fontSize:'11px',color:theme.muted,overflow:'hidden',textOverflow:'ellipsis'}}>{r.sub}</div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
                 {/* Playlists */}
-                {playlists.length>0&&!results.length&&(
+                {playlists.length>0&&(
                   <div>
-                    <div style={{fontSize:'11px',fontWeight:700,color:T.muted,textTransform:'uppercase',letterSpacing:'.06em',marginBottom:'8px'}}>Your Playlists</div>
-                    <div style={{display:'flex',flexDirection:'column',gap:'3px'}}>
-                      {playlists.map((p,i)=>(
-                        <button key={i} onClick={()=>playUri(p.uri)} style={{display:'flex',gap:'8px',alignItems:'center',padding:'7px 8px',borderRadius:'8px',background:'transparent',border:'1px solid transparent',cursor:'pointer',textAlign:'left',width:'100%',transition:'all .1s'}}
-                          onMouseOver={e=>{e.currentTarget.style.background=T.card;e.currentTarget.style.borderColor=T.border;}} onMouseOut={e=>{e.currentTarget.style.background='transparent';e.currentTarget.style.borderColor='transparent';}}>
-                          {p.images?.[0]?.url?<img src={p.images[0].url} alt="" style={{width:'34px',height:'34px',borderRadius:'5px',objectFit:'cover',flexShrink:0}}/>:<div style={{width:'34px',height:'34px',borderRadius:'5px',background:T.card,display:'flex',alignItems:'center',justifyContent:'center',fontSize:'15px',flexShrink:0}}>📋</div>}
-                          <div style={{minWidth:0}}>
-                            <div style={{fontSize:'12px',fontWeight:600,color:T.text,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{p.name}</div>
-                            <div style={{fontSize:'10px',color:T.muted}}>{p.tracks?.total||0} tracks</div>
+                    <div style={{fontSize:'12px',fontWeight:700,color:theme.muted,marginBottom:'10px',textTransform:'uppercase',letterSpacing:'.8px'}}>Your Playlists</div>
+                    <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'8px'}}>
+                      {playlists.slice(0,6).map((p,i)=>(
+                        <div key={i} onClick={()=>playUri(p.uri)} style={{display:'flex',gap:'8px',padding:'8px',borderRadius:'10px',background:theme.card,border:'1px solid '+theme.border,cursor:'pointer',transition:'all .15s'}}
+                          onMouseOver={e=>{e.currentTarget.style.borderColor=theme.accent;e.currentTarget.style.transform='translateY(-2px)';}}
+                          onMouseOut={e=>{e.currentTarget.style.borderColor=theme.border;e.currentTarget.style.transform='translateY(0)';}}>
+                          {p.images[0]?.url?<img src={p.images[0].url} alt="" style={{width:'36px',height:'36px',borderRadius:'6px',objectFit:'cover'}}/>:<div style={{width:'36px',height:'36px',borderRadius:'6px',background:theme.border,display:'flex',alignItems:'center',justifyContent:'center',fontSize:'16px'}}>🎵</div>}
+                          <div style={{minWidth:0,flex:1}}>
+                            <div style={{fontWeight:600,fontSize:'11px',color:theme.text,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{p.name}</div>
+                            <div style={{fontSize:'10px',color:theme.muted}}>Playlist</div>
                           </div>
-                        </button>
+                        </div>
                       ))}
                     </div>
                   </div>
                 )}
+
+                {/* Volume */}
+                <div style={{marginTop:'16px',paddingTop:'16px',borderTop:'1px solid '+theme.border}}>
+                  <div style={{display:'flex',alignItems:'center',gap:'10px'}}>
+                    <span style={{fontSize:'12px',color:theme.muted,minWidth:'45px'}}>🔊 Volume</span>
+                    <input type="range" min={0} max={100} value={vol} onChange={e=>setVol(+e.target.value)} style={{flex:1,color:theme.spotify}}/>
+                    <span style={{fontSize:'11px',color:theme.muted,minWidth:'35px',textAlign:'right'}}>{vol}%</span>
+                  </div>
+                </div>
+
               </div>
             </div>
           )}
         </div>
       </div>
 
-      {/* ════ SETTINGS MODAL ════ */}
+      {/* ════ SETTINGS PANEL ════ */}
       {showSettings&&(
-        <div style={{position:'fixed',inset:0,background:'rgba(10,10,22,.8)',display:'flex',alignItems:'center',justifyContent:'center',zIndex:100,backdropFilter:'blur(8px)',padding:'20px'}} onClick={e=>e.target===e.currentTarget&&setShowSettings(false)}>
-          <div style={{background:T.card,border:'1px solid '+T.border,borderRadius:'20px',padding:'28px',width:'100%',maxWidth:'400px',boxShadow:'0 20px 60px rgba(0,0,0,.6)'}} className="pop">
-            <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'24px'}}>
-              <span style={{fontWeight:700,fontSize:'18px',color:T.text}}>⚙ Settings</span>
-              <button onClick={()=>setShowSettings(false)} style={{background:T.surf,border:'1px solid '+T.border,borderRadius:'50%',width:'32px',height:'32px',color:T.muted,cursor:'pointer',fontSize:'16px',display:'flex',alignItems:'center',justifyContent:'center'}}>×</button>
-            </div>
-            {[['focus','🍅 Focus (min)'],['short','☕ Short Break (min)'],['long','🌿 Long Break (min)'],['longAfter','🔁 Long break after N sessions']].map(([k,l])=>(
-              <div key={k} style={{marginBottom:'16px'}}>
-                <div style={{display:'flex',justifyContent:'space-between',marginBottom:'6px'}}>
-                  <label style={{fontSize:'13px',color:T.mid}}>{l}</label>
-                  <span style={{fontSize:'13px',fontWeight:700,color:T.text}}>{settings[k]}{k!=='longAfter'?' min':''}</span>
+        <div class="fu" style={{position:'absolute',top:'66px',right:'24px',width:'320px',background:theme.surf,border:'1px solid '+theme.border,borderRadius:'16px',boxShadow:'0 12px 48px rgba(0,0,0,.4)',zIndex:100,padding:'18px'}}>
+          <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:'14px'}}>
+            <span style={{fontSize:'15px',fontWeight:700,color:theme.text}}>⚙ Settings</span>
+            <button onClick={()=>setShowSettings(false)} style={{fontSize:'18px',color:theme.muted,transition:'color .18s'}} onMouseOver={e=>e.currentTarget.style.color=theme.text} onMouseOut={e=>e.currentTarget.style.color=theme.muted}>×</button>
+          </div>
+          <div style={{display:'flex',flexDirection:'column',gap:'12px'}}>
+            {[['focus','Focus Duration','min'],['short','Short Break','min'],['long','Long Break','min']].map(([k,l,u])=>(
+              <div key={k} style={{display:'flex',alignItems:'center',justifyContent:'space-between'}}>
+                <span style={{fontSize:'13px',color:theme.text}}>{l}</span>
+                <div style={{display:'flex',alignItems:'center',gap:'8px'}}>
+                  <button onClick={()=>setSettings(s=>({...s,[k]:Math.max(1,s[k]-1)}))} style={{width:'32px',height:'32px',borderRadius:'8px',background:theme.card,border:'1px solid '+theme.border,color:theme.muted,fontSize:'18px',transition:'all .15s'}} onMouseOver={e=>{e.currentTarget.style.background=theme.accent+'22';e.currentTarget.style.color=theme.accent;}} onMouseOut={e=>{e.currentTarget.style.background=theme.card;e.currentTarget.style.color=theme.muted;}}>-</button>
+                  <span style={{fontSize:'14px',color:theme.text,minWidth:'24px',textAlign:'center',fontWeight:600}}>{settings[k]}</span>
+                  <button onClick={()=>setSettings(s=>({...s,[k]:s[k]+1}))} style={{width:'32px',height:'32px',borderRadius:'8px',background:theme.card,border:'1px solid '+theme.border,color:theme.muted,fontSize:'18px',transition:'all .15s'}} onMouseOver={e=>{e.currentTarget.style.background=theme.accent+'22';e.currentTarget.style.color=theme.accent;}} onMouseOut={e=>{e.currentTarget.style.background=theme.card;e.currentTarget.style.color=theme.muted;}}>+</button>
+                  <span style={{fontSize:'11px',color:theme.muted,minWidth:'25px'}}>{u}</span>
                 </div>
-                <input type="range" min={k==='longAfter'?2:1} max={k==='focus'?90:k==='long'?45:k==='longAfter'?8:30} value={settings[k]}
-                  onChange={e=>{const v=+e.target.value;setSettings(s=>({...s,[k]:v}));if(k===mode||k==='focus'&&mode==='focus'||k==='short'&&mode==='short'||k==='long'&&mode==='long'){modeTotal.current=v*60;setTimeLeft(v*60);}}}
-                  style={{color:m.color}}/>
               </div>
             ))}
-            <div style={{height:'1px',background:T.border,margin:'16px 0'}}/>
-            {[['autoAdv','Auto-advance to next mode'],['notifs','Session notifications']].map(([k,l])=>(
-              <div key={k} style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'12px'}}>
-                <span style={{fontSize:'13px',color:T.mid}}>{l}</span>
-                <button onClick={()=>k==='notifs'&&!settings.notifs?requestNotif():setSettings(s=>({...s,[k]:!s[k]}))}
-                  style={{width:'44px',height:'24px',borderRadius:'12px',background:settings[k]?m.color:T.surf,border:'1px solid '+T.border,cursor:'pointer',position:'relative',transition:'background .2s'}}>
-                  <div style={{width:'18px',height:'18px',borderRadius:'50%',background:'#fff',position:'absolute',top:'2px',transition:'left .2s',left:settings[k]?'22px':'2px'}}/>
+            <div style={{height:'1px',background:theme.border,margin:'4px 0'}}/>
+            {[['autoAdv','Auto-advance'],['notifs','Notifications']].map(([k,l])=>(
+              <div key={k} style={{display:'flex',alignItems:'center',justifyContent:'space-between'}}>
+                <span style={{fontSize:'13px',color:theme.text}}>{l}</span>
+                <button onClick={()=>setSettings(s=>({...s,[k]:!s[k]}))} style={{width:'48px',height:'26px',borderRadius:'13px',background:settings[k]?theme.accent:theme.card,border:'1px solid '+theme.border,cursor:'pointer',position:'relative',transition:'background .2s'}}>
+                  <div style={{width:'20px',height:'20px',borderRadius:'50%',background:'#fff',position:'absolute',top:'2px',transition:'left .2s',left:settings[k]?'24px':'3px'}}/>
                 </button>
               </div>
             ))}
+            <div style={{height:'1px',background:theme.border,margin:'4px 0'}}/>
+            <div style={{display:'flex',alignItems:'center',justifyContent:'space-between'}}>
+              <span style={{fontSize:'13px',color:theme.text}}>Long break after</span>
+              <div style={{display:'flex',gap:'6px'}}>
+                {[3,4,5,6].map(n=>(
+                  <button key={n} onClick={()=>setSettings(s=>({...s,longAfter:n}))} style={{width:'34px',height:'34px',borderRadius:'8px',background:settings.longAfter===n?theme.accent:theme.card,border:'1px solid '+theme.border,color:settings.longAfter===n?'#000':theme.muted,fontSize:'13px',fontWeight:700,transition:'all .15s'}}
+                    onMouseOver={e=>{if(settings.longAfter!==n){e.currentTarget.style.background=theme.accent+'22';e.currentTarget.style.color=theme.accent;}}}
+                    onMouseOut={e=>{if(settings.longAfter!==n){e.currentTarget.style.background=theme.card;e.currentTarget.style.color=theme.muted;}}}>{n}</button>
+                ))}
+              </div>
+            </div>
           </div>
+        </div>
+      )}
+
+      {/* ════ THEME PICKER ════ */}
+      {showThemePicker&&(
+        <div class="fu" style={{position:'absolute',top:'66px',right:'200px',width:'280px',background:theme.surf,border:'1px solid '+theme.border,borderRadius:'16px',boxShadow:'0 12px 48px rgba(0,0,0,.4)',zIndex:100,padding:'18px'}}>
+          <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:'8px'}}>
+            <span style={{fontSize:'15px',fontWeight:700,color:theme.text}}>🎨 Choose Theme</span>
+            <button onClick={()=>setShowThemePicker(false)} style={{fontSize:'18px',color:theme.muted,transition:'color .18s'}} onMouseOver={e=>e.currentTarget.style.color=theme.text} onMouseOut={e=>e.currentTarget.style.color=theme.muted}>×</button>
+          </div>
+          <ThemeSelector current={themeName} onChange={setThemeName} theme={theme}/>
         </div>
       )}
     </div>
